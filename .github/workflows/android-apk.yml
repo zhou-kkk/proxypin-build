@@ -1,0 +1,63 @@
+name: Android APK Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Prepare signing config
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE }}
+          STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > android/app/proxypin-ci.jks
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$GITHUB_WORKSPACE/android/app/proxypin-ci.jks" "$STORE_PASS" "$ALIAS" "$KEY_PASS" \
+            > android/key.properties
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: List artifacts
+        run: ls -la build/app/outputs/flutter-apk/
+
+      - name: Create release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.4.0-emudhra
+          name: ProxyPin v1.4.0 (eMudhra build)
+          body: |
+            ProxyPin v1.4.0 Android APK built from the emudhra feature branch.
+
+            - eMudhra compromised CA chain option for MITM certificates (port of mitmproxy #8500)
+            - Signed with the CI keystore (not the official ProxyPin release key)
+          files: build/app/outputs/flutter-apk/*.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true
